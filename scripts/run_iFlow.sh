@@ -17,7 +17,8 @@ do
         -u 0 \
         -c
 done
-    
+
+
 #python main.py \
 #    -x 1000_40_5_5_3_1_gauss_xtanh_u_f \
 #    -i iFlow \

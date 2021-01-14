@@ -19,7 +19,7 @@ import os.path as osp
 import pdb
 
 import datetime
-now = datetime.datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+now = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
 
 EXPERIMENT_FOLDER = osp.join('experiments/', now)
 LOG_FOLDER = osp.join(EXPERIMENT_FOLDER, 'log/')
@@ -85,8 +85,7 @@ if __name__ == '__main__':
     # load data
     if not args.preload:
         dset = SyntheticDataset(args.file, 'cpu') # originally 'cpu' ????
-        loader_params = {'num_workers': 1, 'pin_memory': True} if args.cuda else {} ###############
-        train_loader = DataLoader(dset, shuffle=True, batch_size=args.batch_size, **loader_params)
+        train_loader = DataLoader(dset, shuffle=True, batch_size=args.batch_size)
         data_dim, latent_dim, aux_dim = dset.get_dims()
         args.N = len(dset)
         metadata.update(dset.get_metadata())

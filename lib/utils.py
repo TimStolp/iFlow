@@ -1,6 +1,6 @@
 import json
 import os
-import fcntl
+import portalocker
 import errno
 import time
 
@@ -35,7 +35,7 @@ def get_exp_id(log_folder):
         st = time.time()
         while time.time() - st < 30:
             try:
-                fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                portalocker.lock(file, portalocker.LOCK_EX | portalocker.LOCK_NB)
                 # a = input()
                 break
             except IOError as e:
@@ -52,7 +52,7 @@ def get_exp_id(log_folder):
 
         file.seek(0)
         file.writelines(str(curr_id))
-        fcntl.flock(file, fcntl.LOCK_UN)
+        portalocker.unlock(file)
     return curr_id
 
 
