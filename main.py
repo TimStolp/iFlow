@@ -283,12 +283,13 @@ if __name__ == '__main__':
         z_est, nat_params = model.inference(x, u)
 
     z_est = z_est.cpu().detach().numpy()
-    #nat_params = nat_params.cpu().detach().numpy()
-    #os.makedirs(Z_EST_FOLDER)
-    #np.save("{}/z_est.npy".format(Z_EST_FOLDER), z_est)
-    #np.save("{}/nat_params.npy".format(Z_EST_FOLDER), nat_params)
-    #print("z_est.shape ==", z_est.shape)
-    
+    os.makedirs(Z_EST_FOLDER)
+    np.save("{}/z_est.npy".format(Z_EST_FOLDER), z_est)
+    if args.i_what == 'iFlow':
+        nat_params = nat_params.cpu().detach().numpy()
+        np.save("{}/nat_params.npy".format(Z_EST_FOLDER), nat_params)
+    print("z_est.shape ==", z_est.shape)
+
     perf = mcc(s, z_est)
     print("EVAL PERFORMANCE: {}".format(perf))
     print("DONE.")

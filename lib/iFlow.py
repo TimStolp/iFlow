@@ -173,15 +173,15 @@ class iFlow(nn.Module):
                 nat_param_act,
             ) ## for self.u_dim == 60
 
-        #assert self.u_dim == 5
-        #self._lambda = nn.Sequential(
-        #    nn.Linear(self.u_dim, 4),
-        #    nn.ReLU(inplace=True),
-        #    nn.Linear(4, 4),
-        #    nn.ReLU(inplace=True),
-        #    nn.Linear(4, 2*self.z_dim),
-        #    nat_param_act,
-        #) ## for visualisation where self.u_dim == 5 
+        elif self.u_dim == 5:
+            self._lambda = nn.Sequential(
+               nn.Linear(self.u_dim, 4),
+               nn.ReLU(inplace=True),
+               nn.Linear(4, 4),
+               nn.ReLU(inplace=True),
+               nn.Linear(4, 2*self.z_dim),
+               nat_param_act,
+            ) ## for visualisation where self.u_dim == 5
        
         self.set_mask(self.bs)
 
