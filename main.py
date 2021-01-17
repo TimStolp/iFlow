@@ -19,13 +19,7 @@ import os.path as osp
 import pdb
 
 import datetime
-now = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
 
-EXPERIMENT_FOLDER = osp.join('experiments/', now)
-LOG_FOLDER = osp.join(EXPERIMENT_FOLDER, 'log/')
-TENSORBOARD_RUN_FOLDER = osp.join(EXPERIMENT_FOLDER, 'runs/')
-TORCH_CHECKPOINT_FOLDER = osp.join(EXPERIMENT_FOLDER, 'ckpt/')
-Z_EST_FOLDER = osp.join(EXPERIMENT_FOLDER, 'z_est/')
 
 if __name__ == '__main__':
 
@@ -65,6 +59,14 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    now = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+
+    EXPERIMENT_FOLDER = osp.join('experiments/', now)
+    LOG_FOLDER = osp.join(EXPERIMENT_FOLDER, 'log/')
+    TENSORBOARD_RUN_FOLDER = osp.join(EXPERIMENT_FOLDER, 'runs/')
+    TORCH_CHECKPOINT_FOLDER = osp.join(EXPERIMENT_FOLDER, 'ckpt/')
+    Z_EST_FOLDER = osp.join('z_est/', args.data_args.split('_')[5])
+
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
 
     print(args)
@@ -75,7 +77,7 @@ if __name__ == '__main__':
 
     if args.file is None:
         args.file = create_if_not_exist_dataset(root='data/{}/'.format(args.seed), arg_str=args.data_args)
-    
+
     metadata = vars(args).copy()
     del metadata['no_log'], metadata['data_args']
 
@@ -94,7 +96,7 @@ if __name__ == '__main__':
         data_dim, latent_dim, aux_dim = train_loader.get_dims()
         args.N = train_loader.dataset_len
         metadata.update(train_loader.get_metadata())
-    
+
     if args.max_iter is None:
         args.max_iter = len(train_loader) * args.epochs
 
@@ -133,7 +135,7 @@ if __name__ == '__main__':
     tensorboard_run_name = TENSORBOARD_RUN_FOLDER + 'exp' + str(exp_id) + '_'.join(
         map(str, ['', args.batch_size, args.max_iter, args.lr, args.hidden_dim, args.depth, args.anneal]))
     # 'runs/exp1_64_12500_0.001_50_3_False'
-    
+
     writer = SummaryWriter(logdir=tensorboard_run_name)
 
     if args.i_what == 'iFlow':
@@ -172,7 +174,7 @@ if __name__ == '__main__':
             elif args.i_what == 'iFlow':
                 (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
                 loss = log_normalizer + neg_trace + neg_log_det
-            
+
             loss.backward()
             optimizer.step()
 
@@ -206,7 +208,7 @@ if __name__ == '__main__':
                            optimizer, \
                            logger.get_last('loss'), \
                            logger.get_last('perf'))
-            
+
             """
             if args.i_what == 'iVAE':
                 print('----epoch {} iter {}:\tloss: {:.4f};\tperf: {:.4f}'.format(\
@@ -224,7 +226,7 @@ if __name__ == '__main__':
                                                                     neg_log_det.item(), \
                                                                     perf))
             """
-        
+
         epoch += 1
         eet = time.time()
         if args.i_what == 'iVAE':
@@ -260,14 +262,14 @@ if __name__ == '__main__':
         from functools import reduce
         total_num_examples = reduce(operator.mul, map(int, args.data_args.split('_')[:2]))
         model.set_mask(total_num_examples)
-        
+
     assert args.file is not None
     A = np.load(args.file)
 
     x = A['x'] # of shape
     x = torch.from_numpy(x).to(device)
     print("x.shape ==", x.shape)
-    
+
     s = A['s'] # of shape
     #s = torch.from_numpy(s).to(device)
     print("s.shape ==", s.shape)
@@ -283,8 +285,9 @@ if __name__ == '__main__':
         z_est, nat_params = model.inference(x, u)
 
     z_est = z_est.cpu().detach().numpy()
-    os.makedirs(Z_EST_FOLDER)
-    np.save("{}/z_est.npy".format(Z_EST_FOLDER), z_est)
+    if not osp.exists(Z_EST_FOLDER):
+        os.makedirs(Z_EST_FOLDER)
+    np.save("{}/z_est_{}.npy".format(Z_EST_FOLDER, args.i_what), z_est)
     if args.i_what == 'iFlow':
         nat_params = nat_params.cpu().detach().numpy()
         np.save("{}/nat_params.npy".format(Z_EST_FOLDER), nat_params)
@@ -293,4 +296,3 @@ if __name__ == '__main__':
     perf = mcc(s, z_est)
     print("EVAL PERFORMANCE: {}".format(perf))
     print("DONE.")
-
