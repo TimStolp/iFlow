@@ -49,12 +49,12 @@ if __name__ == '__main__':
     parser.add_argument('-q', '--log-freq', type=int, default=25, help='logging frequency (default 25).')
 
     parser.add_argument('-i', '--i-what', type=str, default="iFlow")
-    parser.add_argument('-ft', '--flow_type', type=str, default="RQSplineFlow")
+    parser.add_argument('-ft', '--flow_type', type=str, default="RQNSF_AG")
     parser.add_argument('-nb', '--num_bins', type=int, default=8)
-    parser.add_argument('-npa', '--nat_param_act', type=str, default="Sigmoid")
+    parser.add_argument('-npa', '--nat_param_act', type=str, default="Softplus")
     parser.add_argument('-u', '--gpu_id', type=str, default='0')
     parser.add_argument('-fl', '--flow_length', type=int, default=10)
-    parser.add_argument('-lr_df', '--lr_drop_factor', type=float, default=0.5)
+    parser.add_argument('-lr_df', '--lr_drop_factor', type=float, default=0.25)
     parser.add_argument('-lr_pn', '--lr_patience', type=int, default=10)
 
     args = parser.parse_args()
@@ -288,6 +288,8 @@ if __name__ == '__main__':
         _, z_est = model.elbo(x, u)
     elif args.i_what == 'iFlow':
         #(_, _, _), z_est = model.neg_log_likelihood(x, u)
+        total_num_examples = reduce(operator.mul, map(int, args.data_args.split('_')[:2]))
+        model.set_mask(total_num_examples)
         z_est, nat_params = model.inference(x, u)
 
     z_est = z_est.cpu().detach().numpy()

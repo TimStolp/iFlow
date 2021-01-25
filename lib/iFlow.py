@@ -208,6 +208,9 @@ class iFlow(nn.Module):
         nat_params = nat_params.reshape(B, self.z_dim, 2) #+ 1e-5 # force the natural_params to be strictly > 0.
         if self.max_act_val:
             nat_params = nat_params * self.max_act_val #+ 1e-5 #self.mask1
+
+        # Mask fitting all batch sizes
+        self.set_mask(bs=nat_params.shape[0])
         nat_params = nat_params * self.mask2
         
         return z, T, nat_params, log_jacobians
