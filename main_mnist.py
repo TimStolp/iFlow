@@ -70,6 +70,7 @@ if __name__ == '__main__':
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
 
+    print(args)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
@@ -164,6 +165,7 @@ if __name__ == '__main__':
         logger.add('neg_trace')
 
     logger.add('loss')
+    logger.add('bpd')
     print('Beginning training for exp: {}'.format(exp_id))
 
     # training loop
@@ -200,6 +202,9 @@ if __name__ == '__main__':
             optimizer.step()
 
             logger.update('loss', loss.item())
+            bpd = loss_to_bpd(loss.item(), data_dim)
+            logger.update('bpd', bpd)
+
             if args.i_what == 'iFlow':
                 logger.update('log_normalizer', log_normalizer.item())
                 logger.update('neg_trace', neg_trace.item())
@@ -208,6 +213,7 @@ if __name__ == '__main__':
             if acc_itr % args.log_freq == 0: # % 25
                 logger.log()
                 writer.add_scalar('data/loss', logger.get_last('loss'), acc_itr)
+                writer.add_scalar('data/bpd', logger.get_last('bpd'), acc_itr)
 
                 if args.i_what == 'iFlow':
                     writer.add_scalar('data/log_normalizer', logger.get_last('log_normalizer'), acc_itr)
@@ -215,7 +221,6 @@ if __name__ == '__main__':
                     writer.add_scalar('data/neg_log_det', logger.get_last('neg_log_det'), acc_itr)
 
                 scheduler.step(logger.get_last('loss'))
-                #scheduler.step(-perf)
 
             if acc_itr % int(args.max_iter / 5) == 0 and not args.no_log:
                 checkpoint(TORCH_CHECKPOINT_FOLDER, \
@@ -247,14 +252,16 @@ if __name__ == '__main__':
         epoch += 1
         eet = time.time()
         if args.i_what == 'iVAE':
-            print('epoch {}: {:.4f}s;\tloss: {:.4f}'.format(epoch, \
+            print('epoch {}: {:.4f}s;\tloss: {:.4f};\tbpd: {:.4f}'.format(epoch, \
                                                                    eet-est, \
-                                                                   logger.get_last('loss')))
+                                                                   logger.get_last('loss'), \
+                                                                   logger.get_last('bpd')))
         elif args.i_what == 'iFlow':
-            print('epoch {}: {:.4f}s;\tloss: {:.4f} (l1: {:.4f}, l2: {:.4f}, l3: {:.4f})'.format(\
+            print('epoch {}: {:.4f}s;\tloss: {:.4f};\tbpd: {:.4f} (l1: {:.4f}, l2: {:.4f}, l3: {:.4f})'.format(\
                                                                     epoch, \
                                                                     eet-est, \
                                                                     logger.get_last('loss'), \
+                                                                    logger.get_last('bpd'), \
                                                                     logger.get_last('log_normalizer'), \
                                                                     logger.get_last('neg_trace'), \
                                                                     logger.get_last('neg_log_det')))
@@ -272,12 +279,6 @@ if __name__ == '__main__':
 
     ###### Run Test Here
     model.eval()
-    if args.i_what == 'iFlow':
-        import operator
-        from functools import reduce
-        total_num_examples = reduce(operator.mul, map(int, args.data_args.split('_')[:2]))
-        model.set_mask(total_num_examples)
-
     # download and transform test dataset
     test_loader = torch.utils.data.DataLoader(torchvision.datasets.MNIST('../mnist_data',
                                                           download=True,
@@ -286,19 +287,23 @@ if __name__ == '__main__':
                                                               torchvision.transforms.ToTensor(), # first, convert image to PyTorch tensor
                                                               torchvision.transforms.Normalize((0.1307,), (0.3081,)) # normalize inputs
                                                           ])),
-                                           batch_size=args.batch_size,
+                                           batch_size=args.batch_size,#args.batch_size,
                                            shuffle=True)
+    bpd_acc = 0
     for x, u in test_loader:
         x = x.flatten(start_dim=1)
         u = F.one_hot(u, num_classes=aux_dim).float().to(device)
         if args.i_what == 'iVAE':
             elbo, z_est = model.elbo(x, u)
-            bpd = loss_to_bpd(elbo, data_dim)
+            loss = elbo.mul(-1)
+
         elif args.i_what == 'iFlow':
             (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
             loss = log_normalizer + neg_trace + neg_log_det
-            bpd = loss_to_bpd(loss, data_dim)
-        print("bpd:", bpd)
+
+        bpd_acc += loss_to_bpd(loss, data_dim)
+    test_bpd = bpd_acc / len(test_loader)
+    print(f"Test BPD: {test_bpd}")
 
 
     #z_est = z_est.cpu().detach().numpy()
