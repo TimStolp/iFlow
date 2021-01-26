@@ -50,12 +50,12 @@ if __name__ == '__main__':
     parser.add_argument('-q', '--log-freq', type=int, default=25, help='logging frequency (default 25).')
 
     parser.add_argument('-i', '--i-what', type=str, default="iFlow")
-    parser.add_argument('-ft', '--flow_type', type=str, default="RQSplineFlow")
+    parser.add_argument('-ft', '--flow_type', type=str, default="RQNSF_AG")
     parser.add_argument('-nb', '--num_bins', type=int, default=8)
     parser.add_argument('-npa', '--nat_param_act', type=str, default="Sigmoid")
     parser.add_argument('-u', '--gpu_id', type=str, default='0')
     parser.add_argument('-fl', '--flow_length', type=int, default=10)
-    parser.add_argument('-lr_df', '--lr_drop_factor', type=float, default=0.5)
+    parser.add_argument('-lr_df', '--lr_drop_factor', type=float, default=0.25)
     parser.add_argument('-lr_pn', '--lr_patience', type=int, default=10)
 
     args = parser.parse_args()
@@ -176,6 +176,7 @@ if __name__ == '__main__':
     while epoch < args.epochs: #args.max_iter:  #12500
         est = time.time()
         for itr, (x, u) in enumerate(train_loader):
+            print(x.shape)
             x = x.flatten(start_dim=1)
             u = F.one_hot(u, num_classes=aux_dim).float()
             acc_itr = itr + epoch * len(train_loader)
@@ -202,6 +203,7 @@ if __name__ == '__main__':
 
             loss.backward()
             optimizer.step()
+            print(loss)
 
             logger.update('loss', loss.item())
             if args.i_what == 'iFlow':

@@ -182,7 +182,16 @@ class iFlow(nn.Module):
                nn.Linear(4, 2*self.z_dim),
                nat_param_act,
             ) ## for visualisation where self.u_dim == 5
-       
+        # Network configuration for MNIST dataset
+        elif self.u_dim == 10:
+            self._lambda = nn.Sequential(
+                nn.Linear(self.u_dim, 8),
+                nn.ReLU(inplace=True),
+                nn.Linear(8, 5),
+                nn.ReLU(inplace=True),
+                nn.Linear(5, 2*self.z_dim),
+                nat_param_act,
+            )
         self.set_mask(self.bs)
 
     def set_mask(self, bs=64):
