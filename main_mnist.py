@@ -13,7 +13,7 @@ from lib.metrics import mean_corr_coef as mcc
 from lib.models import iVAE
 from lib.planar_flow import *
 from lib.iFlow import *
-from lib.utils import Logger, checkpoint
+from lib.utils import Logger, checkpoint, loss_to_bpd
 
 import os
 import os.path as osp
@@ -70,7 +70,6 @@ if __name__ == '__main__':
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
 
-    print(args)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
@@ -116,9 +115,6 @@ if __name__ == '__main__':
     metadata.update({"data_dim": data_dim})
     latent_dim = data_dim
     metadata.update({"latent_dim": latent_dim})
-
-
-    print(metadata)
 
 
     if args.max_iter is None:
@@ -176,7 +172,6 @@ if __name__ == '__main__':
     while epoch < args.epochs: #args.max_iter:  #12500
         est = time.time()
         for itr, (x, u) in enumerate(train_loader):
-            print(x.shape)
             x = x.flatten(start_dim=1)
             u = F.one_hot(u, num_classes=aux_dim).float()
             acc_itr = itr + epoch * len(train_loader)
@@ -203,7 +198,6 @@ if __name__ == '__main__':
 
             loss.backward()
             optimizer.step()
-            print(loss)
 
             logger.update('loss', loss.item())
             if args.i_what == 'iFlow':
@@ -296,12 +290,15 @@ if __name__ == '__main__':
                                            shuffle=True)
     for x, u in test_loader:
         x = x.flatten(start_dim=1)
-        u = F.one_hot(u, num_classes=aux_dim).float()
+        u = F.one_hot(u, num_classes=aux_dim).float().to(device)
         if args.i_what == 'iVAE':
-            _, z_est = model.elbo(x, u)
+            elbo, z_est = model.elbo(x, u)
+            bpd = loss_to_bpd(elbo, data_dim)
         elif args.i_what == 'iFlow':
-            #(_, _, _), z_est = model.neg_log_likelihood(x, u)
-            z_est, nat_params = model.inference(x, u)
+            (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
+            loss = log_normalizer + neg_trace + neg_log_det
+            bpd = loss_to_bpd(loss, data_dim)
+        print("bpd:", bpd)
 
 
     #z_est = z_est.cpu().detach().numpy()

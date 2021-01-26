@@ -97,6 +97,10 @@ def checkpoint(path, exp_id, iteration, model, optimizer, loss, perf):
                 'perf': perf},
                weights_path)
 
+def loss_to_bpd(loss, dim):
+    bpd  = loss * np.log2(np.exp(1)) / dim
+    return bpd
+
 
 class RunningAverageMeter(object):
     """Computes and stores the average and current value"""
@@ -140,16 +144,16 @@ class Averager:
 
 class Logger:
     """A logging helper that tracks training loss and metrics."""
-    
+
     def __init__(self, logdir='log/', **metadata):
         self.logdir = make_dir(logdir)
         exp_id = get_exp_id(logdir)
-        
+
         self.reset()
-        
+
         self.metadata = metadata
         self.exp_id = exp_id
-        
+
         self.log_dict = {}
         self.running_means = {}
 
@@ -196,7 +200,7 @@ class Logger:
             path = make_file(self.logdir + 'log.json')
         with open(path, 'a') as file:
             log = {'id': self.exp_id}
-            
+
             for k in self.keys():
                 if method == 'last':
                     log.update({k: self.get_last(k)})
@@ -204,11 +208,11 @@ class Logger:
                     log.update({k: self.log_dict[k]})
                 else:
                     raise ValueError('Incorrect method {}'.format(method))
-           
+
             if 'device' in self.metadata:
                 self.metadata.pop('device')
             log.update({'metadata': self.metadata})
-            
+
             json.dump(log, file)
             file.write('\n')
         print('Log saved to {}'.format(path))
