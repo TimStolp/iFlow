@@ -14,6 +14,7 @@ from lib.models import iVAE
 from lib.planar_flow import *
 from lib.iFlow import *
 from lib.utils import Logger, checkpoint, loss_to_bpd
+from lib.dequantization import Dequantization
 
 import os
 import os.path as osp
@@ -102,8 +103,8 @@ if __name__ == '__main__':
                                                           download=True,
                                                           train=True,
                                                           transform=torchvision.transforms.Compose([
-                                                              torchvision.transforms.ToTensor(), # first, convert image to PyTorch tensor
-                                                              torchvision.transforms.Normalize((0.1307,), (0.3081,)) # normalize inputs
+                                                              torchvision.transforms.ToTensor() # first, convert image to PyTorch tensor
+                                                              #torchvision.transforms.Normalize((0.1307,), (0.3081,)) # normalize inputs
 
                                                           ])),
                                            batch_size=args.batch_size,
@@ -139,6 +140,7 @@ if __name__ == '__main__':
     elif args.i_what == 'iFlow':
         metadata.update({"device": device})
         model = iFlow(args=metadata).to(device)
+        dequant_module = Dequantization(quants=256)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, \
@@ -186,7 +188,7 @@ if __name__ == '__main__':
             #model.anneal(args.N, args.max_iter, it)
             optimizer.zero_grad()
 
-            if args.cuda and not args.preload:
+            if args.cuda:
                 x = x.cuda(device=device, non_blocking=True)
                 u = u.cuda(device=device, non_blocking=True)
 
@@ -195,6 +197,8 @@ if __name__ == '__main__':
                 loss = elbo.mul(-1)
 
             elif args.i_what == 'iFlow':
+                ldj = torch.zeros(x.shape[0], device=device)
+                deq_img, ldj = dequant_module(x, ldj, reverse=False)
                 (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
                 loss = log_normalizer + neg_trace + neg_log_det
 
@@ -284,8 +288,8 @@ if __name__ == '__main__':
                                                           download=True,
                                                           train=False,
                                                           transform=torchvision.transforms.Compose([
-                                                              torchvision.transforms.ToTensor(), # first, convert image to PyTorch tensor
-                                                              torchvision.transforms.Normalize((0.1307,), (0.3081,)) # normalize inputs
+                                                              torchvision.transforms.ToTensor() # first, convert image to PyTorch tensor
+                                                              #torchvision.transforms.Normalize((0.1307,), (0.3081,)) # normalize inputs
                                                           ])),
                                            batch_size=args.batch_size,#args.batch_size,
                                            shuffle=True)
