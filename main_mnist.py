@@ -198,7 +198,7 @@ if __name__ == '__main__':
 
             elif args.i_what == 'iFlow':
                 ldj = torch.zeros(x.shape[0], device=device)
-                deq_img, ldj = dequant_module(x, ldj, reverse=False)
+                x, ldj = dequant_module(x, ldj, reverse=False)
                 (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
                 loss = log_normalizer + neg_trace + neg_log_det
 
@@ -297,11 +297,17 @@ if __name__ == '__main__':
     for x, u in test_loader:
         x = x.flatten(start_dim=1)
         u = F.one_hot(u, num_classes=aux_dim).float().to(device)
+        if args.cuda:
+            x = x.cuda(device=device, non_blocking=True)
+            u = u.cuda(device=device, non_blocking=True)
+
         if args.i_what == 'iVAE':
             elbo, z_est = model.elbo(x, u)
             loss = elbo.mul(-1)
 
         elif args.i_what == 'iFlow':
+            ldj = torch.zeros(x.shape[0], device=device)
+            x, ldj = dequant_module(x, ldj, reverse=False)
             (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
             loss = log_normalizer + neg_trace + neg_log_det
 
