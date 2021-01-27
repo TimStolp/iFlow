@@ -67,7 +67,7 @@ if __name__ == '__main__':
     LOG_FOLDER = osp.join(EXPERIMENT_FOLDER, 'log/')
     TENSORBOARD_RUN_FOLDER = osp.join(EXPERIMENT_FOLDER, 'runs/')
     TORCH_CHECKPOINT_FOLDER = osp.join(EXPERIMENT_FOLDER, 'ckpt/')
-    #Z_EST_FOLDER = osp.join('z_est/', args.data_args.split('_')[5])
+    Z_EST_FOLDER = osp.join('z_est/', 'mnist')
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
 
@@ -112,6 +112,7 @@ if __name__ == '__main__':
     args.N = len(train_loader.dataset)
     metadata.update({"n": args.N})
     aux_dim = len(train_loader.dataset.classes)
+    print(train_loader.dataset.classes)
     metadata.update({"aux_dim": aux_dim})
     data_dim = len(train_loader.dataset[0][0].flatten())
     metadata.update({"data_dim": data_dim})
@@ -294,6 +295,7 @@ if __name__ == '__main__':
                                            batch_size=args.batch_size,#args.batch_size,
                                            shuffle=True)
     bpd_acc = 0
+    z_est_list = []
     for x, u in test_loader:
         x = x.flatten(start_dim=1)
         u = F.one_hot(u, num_classes=aux_dim).float().to(device)
@@ -302,25 +304,30 @@ if __name__ == '__main__':
             u = u.cuda(device=device, non_blocking=True)
 
         if args.i_what == 'iVAE':
-            elbo, z_est = model.elbo(x, u)
+            elbo, z_est_batch = model.elbo(x, u)
             loss = elbo.mul(-1)
 
         elif args.i_what == 'iFlow':
             ldj = torch.zeros(x.shape[0], device=device)
             x, ldj = dequant_module(x, ldj, reverse=False)
-            (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
+            (log_normalizer, neg_trace, neg_log_det), z_est_batch = model.neg_log_likelihood(x, u)
             loss = log_normalizer + neg_trace + neg_log_det
 
+        z_est_list.append(z_est_batch)
         bpd_acc += loss_to_bpd(loss, data_dim)
+    z_est = torch.cat((z_est_list), 0)
     test_bpd = bpd_acc / len(test_loader)
     print(f"Test BPD: {test_bpd}")
 
 
-    #z_est = z_est.cpu().detach().numpy()
-    #if not osp.exists(Z_EST_FOLDER):
-    #    os.makedirs(Z_EST_FOLDER)
-    #np.save("{}/z_est_{}.npy".format(Z_EST_FOLDER, args.i_what), z_est)
+    z_est = z_est.cpu().detach().numpy()
+    if not osp.exists(Z_EST_FOLDER):
+        os.makedirs(Z_EST_FOLDER)
+    np.save("{}/z_est_{}.npy".format(Z_EST_FOLDER, args.i_what), z_est)
     if args.i_what == 'iFlow':
+        # obtain \lambda for each class
+        u = torch.eye(aux_dim).float().to(device)
+        nat_params = model.nat_params(u)
         nat_params = nat_params.cpu().detach().numpy()
         np.save("{}/nat_params.npy".format(Z_EST_FOLDER), nat_params)
     #print("z_est.shape ==", z_est.shape)
