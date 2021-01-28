@@ -112,6 +112,7 @@ class iFlow(nn.Module):
         self.k = 2 # number of orders of sufficient statistics
 
         flow_type = args['flow_type']
+        print(args)
         
         if flow_type == "PlanarFlow":
             self.nf = PlanarFlow(dim=self.x_dim, flow_length=args['flow_length'])

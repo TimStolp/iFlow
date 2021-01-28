@@ -170,6 +170,12 @@ def generate_nonstationary_sources(n_per_seg: int,
     elif prior == 'gauss':
         sources = np.random.randn(n, d).astype(dtype)
         # (40000, 2)
+    elif prior == 'uni':
+        sources = np.random.uniform(size=(n, d)).astype(dtype)
+    elif prior == 'pois':
+        sources = np.random.poisson(size=(n, d)).astype(dtype)
+    elif prior == 'lognormal':
+        sources = np.random.lognormal(size=(n, d)).astype(dtype)
     elif prior == 'mixture':
         assert n_seg % 3 == 0
         sources_lap = np.random.laplace(0, 1/np.sqrt(2), (n//3, d)).astype(dtype) # of shape (20,000, d)
@@ -177,7 +183,6 @@ def generate_nonstationary_sources(n_per_seg: int,
         sources_gauss = np.random.randn(n//3, d).astype(dtype)
 
         sources = np.concatenate((sources_lap, sources_hs, sources_gauss))
-
     else:
         raise ValueError('Incorrect Distribution')
 
@@ -222,7 +227,7 @@ def generate_data(n_per_seg,
                   lin_type='uniform', 
                   n_iter_4_cond=1e4,
                   dtype=np.float32, 
-                  noisy=0, 
+                  noisy=0.2,
                   uncentered=False, 
                   centers=None):
     """
