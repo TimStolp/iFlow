@@ -13,6 +13,7 @@ from lib.models import iVAE
 from lib.planar_flow import *
 from lib.iFlow import *
 from lib.utils import Logger, checkpoint
+from scipy.optimize import linear_sum_assignment
 
 import os
 import os.path as osp
@@ -20,6 +21,32 @@ import pdb
 
 import datetime
 
+def correlation_coefficients(x, y, method='pearson'):
+    """
+    A numpy implementation of the mean correlation coefficient metric.
+
+    :param x: numpy.ndarray
+    :param y: numpy.ndarray
+    :param method: str, optional
+            The method used to compute the correlation coefficients.
+                The options are 'pearson' and 'spearman'
+                'pearson':
+                    use Pearson's correlation coefficient
+                'spearman':
+                    use Spearman's nonparametric rank correlation coefficient
+    :return: float
+    """
+    d = x.shape[1]
+    if method == 'pearson':
+        cc = np.corrcoef(x, y, rowvar=False)[:d, d:]
+    elif method == 'spearman':
+        cc = spearmanr(x, y)[0][:d, d:]
+    else:
+        raise ValueError('not a valid method: {}'.format(method))
+    cc_matrix = np.abs(cc)
+
+    corr_coefs = cc_matrix[linear_sum_assignment(-1 * cc_matrix)] #.mean()
+    return corr_coefs, cc_matrix
 
 if __name__ == '__main__':
 
@@ -56,6 +83,7 @@ if __name__ == '__main__':
     parser.add_argument('-fl', '--flow_length', type=int, default=10)
     parser.add_argument('-lr_df', '--lr_drop_factor', type=float, default=0.25)
     parser.add_argument('-lr_pn', '--lr_patience', type=int, default=10)
+    parser.add_argument('-mcc', '--mcc_store', action='store_true', default=False, help='save MCC to path /results/i-what_nps_ns_nl')
 
     args = parser.parse_args()
 
@@ -66,7 +94,6 @@ if __name__ == '__main__':
     TENSORBOARD_RUN_FOLDER = osp.join(EXPERIMENT_FOLDER, 'runs/')
     TORCH_CHECKPOINT_FOLDER = osp.join(EXPERIMENT_FOLDER, 'ckpt/')
     PT_MODELS_FOLDER = osp.join('pt_models/', args.data_args + '_' + args.i_what + '_' + str(args.epochs))
-    # Z_EST_FOLDER = osp.join('z_est/', args.data_args.split('_')[5])
     Z_EST_FOLDER = osp.join('z_est/', args.data_args + '_' + str(args.epochs))
 
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -313,19 +340,21 @@ if __name__ == '__main__':
     print("z_est.shape ==", z_est.shape)
 
     perf = mcc(s, z_est)
+    corr_coefs = correlation_coefficients(s, z_est)
     print("EVAL PERFORMANCE: {}".format(perf))
 
     # Writes results for current model, flow type and n layers in mixing MLP
-    # Saved as i-what_ft_ns_nl.txt
+    # Saved as i-what_nsource_nlayers_flowlength_prior.txt
     if args.i_what == 'iVAE':
-        with open(osp.join('results', args.i_what + '_' + "_".join(args.data_args.split("_")[:1]) + '_'
-                            + args.data_args.split("_")[4] + '.txt'), 'a+') as f:
-
+        with open(osp.join('results', "_".join([args.i_what, args.data_args]) + '.txt'), 'a+') as f:
+        # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
+        #                                         args.data_args.split("_")[4], args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
             f.write(", " + str(perf))
     else:
-        with open(osp.join('results', args.i_what + '_' + args.flow_type + '_'
-                            + "_".join(args.data_args.split("_")[:2]) + '_' + args.data_args.split("_")[4]  + '.txt'), 'a+') as f:
-
+        with open(osp.join('results', "_".join([args.i_what, args.data_args]) + '.txt'), 'a+') as f:
+        # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
+        #                                         args.data_args.split("_")[4],
+        #                                         args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
             f.write(", " + str(perf))
 
     print("DONE.")
