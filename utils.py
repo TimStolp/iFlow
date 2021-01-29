@@ -98,13 +98,11 @@ def load_plot_2d(seeds, data_arguments='1000_5_2_2_$mixing-layers_$seed_gauss_xt
         with open(iFlow_results_file) as f:
             iFlow_perfs = list(map(eval, f.readline().split(',')[1:]))
             print('iFlow mean = {:.4f}, std = {:.4f}'.format(np.mean(iFlow_perfs), np.std(iFlow_perfs)))
-            print('len iFlow array:', len(iFlow_perfs))
 
     if iVAE_results_file:
         with open(iVAE_results_file) as f:
             iVAE_perfs = list(map(eval, f.readline().split(',')[1:]))
             print('iVAE mean = {:.4f}, std = {:.4f}'.format(np.mean(iVAE_perfs), np.std(iVAE_perfs)))
-            print('len iVAE array:', len(iVAE_perfs))
 
 
 
@@ -271,7 +269,7 @@ def print_cc_mean_std(file):
     file : path to data file in .txt format. (default None)
     """
     with open(file, 'r') as f:
-        coeffs = f.read().replace('\n', '').split(';')[1:]
+        coeffs = f.read().replace('\n', '').replace('\r\n', '').split(';')[1:]
 
     array = np.array([c.strip('[]').split() for c in coeffs]).astype('float')
     std = array.std(axis=0)
