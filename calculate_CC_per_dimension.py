@@ -96,4 +96,4 @@ print(corr_coeffs)
 if not os.path.exists('results'):
     os.makedirs('results')
 with open(osp.join('results', 'corr_coeffs_per_dimension.txt'), 'a+') as f:
-    f.write(str(corr_coeffs) + '\n')
+    f.write(';' + str(corr_coeffs))
