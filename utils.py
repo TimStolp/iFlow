@@ -104,9 +104,10 @@ def load_plot_2d(seeds, data_arguments='1000_5_2_2_$mixing-layers_$seed_gauss_xt
 
 
     for i, seed in enumerate(seeds):
+        data_arguments[5] = str(seed)
+        data_file = create_if_not_exist_dataset(root='data/{}/'.format(1), arg_str="_".join(data_arguments))
         # load data
-        path_to_dataset = "data/1/tcl_" + "_".join(data_arguments[:5]) + "_" + str(seed) + "_" + "_".join(
-            data_arguments[6:-1]) + ".npz"  # slice off "_f"
+        path_to_dataset = data_file
         print('Dataset seed = {}'.format(seed))
         with np.load(path_to_dataset) as data:
             x = data['x']
