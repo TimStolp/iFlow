@@ -5,6 +5,7 @@ import torch
 from lib.data import create_if_not_exist_dataset
 from lib.iFlow import iFlow
 from lib.models import iVAE
+from lib.metrics import mean_corr_coef as mcc
 
 from scipy.optimize import linear_sum_assignment
 
@@ -198,3 +199,65 @@ def load_model_from_checkpoint(ckpt_path, device, model_seed=1):
 
     model.load_state_dict(checkpoint['model_state_dict'])
     return model
+
+
+def plot_5d_correlations(z_est_dataset_dir, show_iFlow=True, show_iVAE=True):
+    data_arguments = z_est_dataset_dir.split('/')[-1]
+    data_arguments = "_".join(data_arguments.split("_")[:-1])  # Remove last "_epochs" from string
+    seed = data_arguments.split("_")[5]
+
+    # load data
+    path_to_dataset = "data/1/tcl_" + data_arguments[:-2] + ".npz"  # slice off "_f"
+    with np.load(path_to_dataset) as data:
+        x = data['x']
+        u = data['u']
+        s = data['s']
+    # load predictions
+    z_est_iFlow = None
+    z_est_iVAE = None
+    if show_iFlow:
+        z_est_iFlow = np.load(osp.join(z_est_dataset_dir, "z_est_iFlow.npy").replace("\\", "/"))
+    if show_iVAE:
+        z_est_iVAE = np.load(osp.join(z_est_dataset_dir, "z_est_iVAE.npy").replace("\\", "/"))
+
+    model_names = ['iFlow', 'iVAE']
+    graph_color = ['y', 'indianred']
+
+    n, n_segments = u.shape
+    points_per_seg = n // n_segments
+
+    for model_idx, z_est in enumerate([z_est_iFlow, z_est_iVAE]):
+        if z_est is not None:
+            print('{} performance on dataset'.format(model_names[model_idx]))
+            print('Dataset seed = ', seed)
+
+            # Get correlation coefficients
+            print('MCC = ', round(mcc(s, z_est), 4))
+            corr_coefs = correlation_coefficients(s, z_est)
+
+            mean_source = np.zeros((5, n_segments))
+            mean_est = np.zeros((5, n_segments))
+
+            for i in range(n_segments):
+                for dim in range(5):
+                    mean_source[dim][i] = np.mean(s[i * points_per_seg:(i + 1) * points_per_seg, [dim]])
+                    mean_est[dim][i] = np.mean(z_est[i * points_per_seg:(i + 1) * points_per_seg, [dim]])
+
+            # Standardize both signals (mean=0, std=1)
+            mean_source = (mean_source - np.mean(mean_source, axis=0)) / np.std(mean_source, axis=0)
+            mean_est = (mean_est - np.mean(mean_est, axis=0)) / np.std(mean_est, axis=0)
+
+            fig, axes = plt.subplots(1, 5, figsize=(15, 3))
+            fig.tight_layout()
+            plt.gcf().subplots_adjust(bottom=0.15, left=0.05)
+
+            for i in range(5):
+                axes[i].plot(mean_source[i], linestyle='-.')
+                axes[i].plot(mean_est[i], linestyle='-.', color=graph_color[model_idx])
+                axes[i].set_title("corr: " + str(round(corr_coefs[i], 4)))
+
+            axes[2].set_xlabel('Segment')
+            axes[0].set_ylabel('Latent Value')
+            plt.show()
+
+            fig.savefig('results/mcc_across_dims/' + "_".join([model_names[model_idx], data_arguments]))
