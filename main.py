@@ -1,3 +1,4 @@
+
 import argparse
 import time
 
@@ -83,6 +84,7 @@ if __name__ == '__main__':
 
     if args.file is None:
         args.file = create_if_not_exist_dataset(root='data/{}/'.format(args.seed), arg_str=args.data_args)
+    print(args.file)
 
     metadata = vars(args).copy()
     del metadata['no_log'], metadata['data_args']
@@ -113,14 +115,17 @@ if __name__ == '__main__':
     # define model and optimizer
     model = None
     if args.i_what == 'iVAE':
-        model = iVAE(latent_dim, \
-                 data_dim, \
-                 aux_dim, \
-                 n_layers=args.depth, \
-                 activation='lrelu', \
-                 device=device, \
-                 hidden_dim=args.hidden_dim, \
-                 anneal=args.anneal) # False
+        model = iVAE(latent_dim,
+                     data_dim,
+                     aux_dim,
+                     n_layers=args.depth,
+                     activation='lrelu',
+                     device=device,
+                     hidden_dim=args.hidden_dim,
+                     anneal=args.anneal, #False
+                     file=metadata['file'], # Added dataset location for easier checkpoint loading
+                     seed=1,
+                     epochs=args.epochs)
     elif args.i_what == 'iFlow':
         metadata.update({"device": device})
         model = iFlow(args=metadata).to(device)

@@ -1,0 +1,172 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import os.path as osp
+import torch
+from lib.data import create_if_not_exist_dataset
+from lib.iFlow import iFlow
+from lib.models import iVAE
+
+def plot_2d(s, x, u, z_est_iFlow, z_est_iVAE, iFlow_perf=None, iVAE_perf=None, filename=None):
+    """
+    s : true latent variables, source of the observations
+    x : observations, the inputs of iFlow and iVAE models
+    z_est_iFlow : predictions of the iFlow model
+    z_est_iVAE : predictions of the iVAE model
+    iFlow_perf : .txt file containing iFlow scores
+    iVAE_perf : .txt file containing iVAE scores
+    filename : targed name for saving the file in results/2D_visualizations
+    """
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4)
+    fig.tight_layout()
+
+    n, n_segments = u.shape
+    n_per_segment = int(n / n_segments)
+    for i in range(n_segments):
+        (start, stop) = i * n_per_segment, (i + 1) * n_per_segment
+        ax1.scatter(s[start:stop, 0], s[start:stop, 1], s=1)
+        ax1.set_xticks([])
+        ax1.set_yticks([])
+        ax1.set_xlabel("Original sources")
+        ax2.scatter(x[start:stop, 0], x[start:stop, 1], s=1)
+        ax2.set_xticks([])
+        ax2.set_yticks([])
+        ax2.set_xlabel("Observations")
+        ax3.scatter(z_est_iFlow[start:stop, 0], z_est_iFlow[start:stop, 1], s=1)
+        ax3.set_xticks([])
+        ax3.set_yticks([])
+        if iFlow_perf:
+            ax3.set_xlabel("iFlow (MCC: {:.2f})".format(iFlow_perf))
+        else:
+            ax3.set_xlabel("iFlow")
+        ax4.scatter(z_est_iVAE[start:stop, 0], z_est_iVAE[start:stop, 1], s=1)
+        ax4.set_xticks([])
+        ax4.set_yticks([])
+        if iVAE_perf:
+            ax4.set_xlabel("iVAE (MCC: {:.2f})".format(iVAE_perf))
+        else:
+            ax4.set_xlabel("iVAE")
+    plt.show()
+    fig.savefig('results/2D_visualizations/' + filename)
+    return
+
+
+def load_plot_2d(seeds, data_arguments, iFlow_results_file=None, iVAE_results_file=None, epochs=20):
+    """
+    seeds : list of dataset seeds for visualization
+    data_arguments : arguments for the dataset
+    iFlow_results_file : filename of corresponding iFlow results
+    iVAE_results_file : filename of corresponding iVAE results
+    epochs : number of training epochs
+    """
+    iFlow_perfs = None
+    iVAE_perfs = None
+
+    if iFlow_results_file:
+        with open(osp.join('results', iFlow_results_file)) as f:
+            iFlow_perfs = list(map(eval, f.readline().split(',')[1:]))
+    if iVAE_results_file:
+        with open(osp.join('results', iVAE_results_file)) as f:
+            iVAE_perfs = list(map(eval, f.readline().split(',')[1:]))
+
+    print('iFlow mean {:.4f}, std {:.4f}'.format(np.mean(iFlow_perfs), np.std(iFlow_perfs)))
+
+    print('iVAE mean  {:.4f}, std {:.4f}'.format(np.mean(iVAE_perfs), np.std(iVAE_perfs)))
+    print('len iFlow array:', len(iFlow_perfs))
+    print('len iVAE array:', len(iVAE_perfs))
+
+    data_arguments = data_arguments.split("_")
+    for i, seed in enumerate(seeds):
+        # load data
+        path_to_dataset = "data/1/tcl_" + "_".join(data_arguments[:5]) + "_" + str(seed) + "_" + "_".join(
+            data_arguments[6:-1]) + ".npz"  # slice off "_f"
+        print('Dataset seed = {}'.format(seed))
+        with np.load(path_to_dataset) as data:
+            x = data['x']
+            u = data['u']
+            s = data['s']
+            m = data['m']
+            L = data['L']
+        # load predictions
+        path_to_z_est = "z_est/" + "_".join(data_arguments[:5]) + "_" + str(seed) + "_" + "_".join(
+            data_arguments[6:]) + '_' + str(epochs) + "/"
+        z_est_iFlow = np.load(path_to_z_est + "z_est_iFlow.npy")
+        z_est_iVAE = np.load(path_to_z_est + "z_est_iVAE.npy")
+
+        # Plotted figure is saved with data_args as filename in results/2D_visualizations/
+        fig_name = "_".join(["_".join(data_arguments[:5]), str(seed), "_".join(data_arguments[6:]), str(epochs)])
+        # plot and save figure
+        plot_2d(s, x, u, z_est_iFlow, z_est_iVAE, iFlow_perfs[i], iVAE_perfs[i], filename=fig_name)
+
+# def plot_2d_from_checkpoint(data_arguments, checkpoint)
+
+def load_model_from_checkpoint(ckpt_path, device, model_seed=1):
+    print('checkpoint path:', ckpt_path)
+    model_args = ckpt_path.split('/')[1]  # get folder name containing model and data properties
+    ckpt_filename = ckpt_path.split('/')[-1]
+
+    model_args = model_args.split('_')
+    epochs = model_args[-1]
+    model_name = model_args[-2]
+    data_args = model_args[:-2]
+
+    data_file = create_if_not_exist_dataset(root='data/{}/'.format(model_seed), arg_str="_".join(data_args))
+
+    nps = int(data_args[0])
+    ns = int(data_args[1])
+    aux_dim = int(data_args[1])
+    n = nps * ns
+    latent_dim = int(data_args[2])
+    data_dim = int(data_args[3])
+
+    print('Loading model', model_name)
+    model_path = ckpt_path
+
+    print('Loading data', data_file)
+    A = np.load(data_file)
+
+    x = A['x']  # of shape
+    x = torch.from_numpy(x).to(device)
+    print("x.shape ==", x.shape)
+
+    s = A['s']  # of shape
+    # s = torch.from_numpy(s).to(device)
+    print("s.shape ==", s.shape)
+
+    u = A['u']  # of shape
+    u = torch.from_numpy(u).to(device)
+    print("u.shape ==", u.shape)
+
+    checkpoint = torch.load(model_path)
+
+    # Arguments (metadata, from argparse in main.py), have to correspond to selected dataset and model properties
+    # Hyperparameter and configurations as precribed in the paper.
+    metadata = {'file': data_file, 'path': data_file, 'batch_size': 64,
+                'epochs': epochs, 'device': device, 'seed': 1, 'i_what': model_name,
+
+                'max_iter': None, 'hidden_dim': 50, 'depth': 3,
+                'lr': 1e-3, 'cuda': True, 'preload': True,
+                'anneal': False, 'log_freq': 25,
+                'flow_type': 'RQNSF_AG', 'num_bins': 8,
+                'nat_param_act': 'Softplus', 'gpu_id': '0',
+                'flow_length': 10, 'lr_drop_factor': 0.25,
+                'lr_patience': 10}
+
+    # Get dataset properties
+    metadata.update({'nps': nps, 'ns': ns, 'n': n, 'latent_dim': latent_dim, 'data_dim': data_dim, 'aux_dim': aux_dim})
+
+    if model_name == 'iFlow':
+        model = iFlow(args=metadata).to(device)
+    elif model_name == "iVAE":
+        model = iVAE(latent_dim,  # latent_dim
+                     data_dim,  # data_dim
+                     aux_dim,  # aux_dim
+                     n_layers=metadata['depth'],
+                     activation='lrelu',
+                     device=device,
+                     hidden_dim=metadata['hidden_dim'],
+                     anneal=metadata['anneal'],  # False
+                     file=metadata['file'],
+                     seed=1)
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model

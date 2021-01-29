@@ -14,6 +14,8 @@ from lib.planar_flow import *
 from lib.iFlow import *
 from lib.utils import Logger, checkpoint
 from scipy.optimize import linear_sum_assignment
+import operator
+from functools import reduce
 
 import os
 import os.path as osp
@@ -47,6 +49,247 @@ def correlation_coefficients(x, y, method='pearson'):
 
     corr_coefs = cc_matrix[linear_sum_assignment(-1 * cc_matrix)] #.mean()
     return corr_coefs, cc_matrix
+
+def train_model(args, metadata, device='cuda'):
+    print('training on {}'.format(torch.cuda.get_device_name(device) if args.cuda else 'cpu'))
+
+    # load data
+    if not args.preload:
+        dset = SyntheticDataset(args.file, 'cpu')  # originally 'cpu' ????
+        train_loader = DataLoader(dset, shuffle=True, batch_size=args.batch_size)
+        data_dim, latent_dim, aux_dim = dset.get_dims()
+        args.N = len(dset)
+        metadata.update(dset.get_metadata())
+    else:
+        train_loader = DataLoaderGPU(args.file, shuffle=True, batch_size=args.batch_size)
+        data_dim, latent_dim, aux_dim = train_loader.get_dims()
+        args.N = train_loader.dataset_len
+        metadata.update(train_loader.get_metadata())
+
+    if args.max_iter is None:
+        args.max_iter = len(train_loader) * args.epochs
+
+    if args.latent_dim is not None:
+        latent_dim = args.latent_dim
+        metadata.update({"train_latent_dim": latent_dim})
+
+    # define model and optimizer
+    model = None
+    if args.i_what == 'iVAE':
+        model = iVAE(latent_dim,
+                     data_dim,
+                     aux_dim,
+                     n_layers=args.depth,
+                     activation='lrelu',
+                     device=device,
+                     hidden_dim=args.hidden_dim,
+                     anneal=args.anneal,  # False
+                     file=metadata['file'],  # Added dataset location for easier checkpoint loading
+                     seed=1,
+                     epochs=args.epochs)
+    elif args.i_what == 'iFlow':
+        metadata.update({"device": device})
+        model = iFlow(args=metadata).to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, \
+                                                     factor=args.lr_drop_factor, \
+                                                     patience=args.lr_patience, \
+                                                     verbose=True)  # factor=0.1 and patience=4
+
+    ste = time.time()
+    print('setup time: {}s'.format(ste - st))
+
+    # setup loggers
+    logger = Logger(logdir=LOG_FOLDER)  # 'log/'
+    exp_id = logger.get_id()  # 1
+
+    tensorboard_run_name = TENSORBOARD_RUN_FOLDER + 'exp' + str(exp_id) + '_'.join(
+        map(str, ['', args.batch_size, args.max_iter, args.lr, args.hidden_dim, args.depth, args.anneal]))
+    # 'runs/exp1_64_12500_0.001_50_3_False'
+
+    writer = SummaryWriter(logdir=tensorboard_run_name)
+
+    if args.i_what == 'iFlow':
+        logger.add('log_normalizer')
+        logger.add('neg_log_det')
+        logger.add('neg_trace')
+
+    logger.add('loss')
+    logger.add('perf')
+    print('Beginning training for exp: {}'.format(exp_id))
+
+    # training loop
+    epoch = 0
+    model.train()
+    while epoch < args.epochs:  # args.max_iter:  #12500
+        est = time.time()
+        for itr, (x, u, z) in enumerate(train_loader):
+            acc_itr = itr + epoch * len(train_loader)
+
+            # x is of shape [64, 4]
+            # u is of shape [64, 40], one-hot coding of 40 classes
+            # z is of shape [64, 2]
+
+            # it += 1
+            # model.anneal(args.N, args.max_iter, it)
+            optimizer.zero_grad()
+
+            if args.cuda and not args.preload:
+                x = x.cuda(device=device, non_blocking=True)
+                u = u.cuda(device=device, non_blocking=True)
+
+            if args.i_what == 'iVAE':
+                elbo, z_est = model.elbo(x, u)  # elbo is a scalar loss while z_est is of shape [64, 2]
+                loss = elbo.mul(-1)
+
+            elif args.i_what == 'iFlow':
+                (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
+                loss = log_normalizer + neg_trace + neg_log_det
+
+            loss.backward()
+            optimizer.step()
+
+            logger.update('loss', loss.item())
+            if args.i_what == 'iFlow':
+                logger.update('log_normalizer', log_normalizer.item())
+                logger.update('neg_trace', neg_trace.item())
+                logger.update('neg_log_det', neg_log_det.item())
+
+            perf = mcc(z.cpu().numpy(), z_est.cpu().detach().numpy())
+            logger.update('perf', perf)
+
+            if acc_itr % args.log_freq == 0:  # % 25
+                logger.log()
+                writer.add_scalar('data/performance', logger.get_last('perf'), acc_itr)
+                writer.add_scalar('data/loss', logger.get_last('loss'), acc_itr)
+
+                if args.i_what == 'iFlow':
+                    writer.add_scalar('data/log_normalizer', logger.get_last('log_normalizer'), acc_itr)
+                    writer.add_scalar('data/neg_trace', logger.get_last('neg_trace'), acc_itr)
+                    writer.add_scalar('data/neg_log_det', logger.get_last('neg_log_det'), acc_itr)
+
+                scheduler.step(logger.get_last('loss'))
+
+            if acc_itr % int(args.max_iter / 5) == 0 and not args.no_log:
+                checkpoint(TORCH_CHECKPOINT_FOLDER, \
+                           exp_id, \
+                           acc_itr, \
+                           model, \
+                           optimizer, \
+                           logger.get_last('loss'), \
+                           logger.get_last('perf'))
+
+        epoch += 1
+        eet = time.time()
+        if args.i_what == 'iVAE':
+            print('epoch {}: {:.4f}s;\tloss: {:.4f};\tperf: {:.4f}'.format(epoch,
+                                                                           eet - est,
+                                                                           logger.get_last('loss'),
+                                                                           logger.get_last('perf')))
+        elif args.i_what == 'iFlow':
+            print('epoch {}: {:.4f}s;\tloss: {:.4f} (l1: {:.4f}, l2: {:.4f}, l3: {:.4f});\tperf: {:.4f}'.format( \
+                epoch,
+                eet - est,
+                logger.get_last('loss'),
+                logger.get_last('log_normalizer'),
+                logger.get_last('neg_trace'),
+                logger.get_last('neg_log_det'),
+                logger.get_last('perf')))
+
+    et = time.time()
+    print('training time: {}s'.format(et - ste))
+
+    # Save final model
+    checkpoint(PT_MODELS_FOLDER,
+               "",
+               'final',
+               model,
+               optimizer,
+               logger.get_last('loss'),
+               logger.get_last('perf'))
+
+    writer.close()
+    if not args.no_log:
+        logger.add_metadata(**metadata)
+        logger.save_to_json()
+        logger.save_to_npz()
+
+    print('total time: {}s'.format(et - st))
+    return model
+
+def test_model(model, device, save_mcc=False):
+    ###### Run Test Here
+    model.eval()
+
+    # Grab data arguments from dataset filename
+    model_name = model.__class__.__name__
+    if model_name == 'iFlow':
+        data_args = model.args['file'].split('/')[-1][4:-4] + '_f'
+        seed = model.args['seed']
+        epochs = model.args['epochs']
+    elif model_name == 'iVAE':
+        data_args = model.file.split('/')[-1][4:-4] + '_f'
+        seed = model.seed
+        epochs = model.epochs
+
+
+    data_file = create_if_not_exist_dataset(root='data/{}/'.format(seed), arg_str=data_args)
+    A = np.load(data_file)
+
+    x = A['x']  # of shape
+    x = torch.from_numpy(x).to(device)
+    print("x.shape ==", x.shape)
+
+    s = A['s']  # of shape
+    # s = torch.from_numpy(s).to(device)
+    print("s.shape ==", s.shape)
+
+    u = A['u']  # of shape
+    u = torch.from_numpy(u).to(device)
+    print("u.shape ==", u.shape)
+
+    if model_name == 'iVAE':
+        _, z_est = model.elbo(x, u)
+    elif model_name == 'iFlow':
+        # (_, _, _), z_est = model.neg_log_likelihood(x, u)
+        total_num_examples = reduce(operator.mul, map(int, data_args.split('_')[:2]))
+        model.set_mask(total_num_examples)
+        z_est, nat_params = model.inference(x, u)
+
+    z_est = z_est.cpu().detach().numpy()
+
+
+    Z_EST_FOLDER = osp.join('z_est/', data_args + '_' + str(epochs))
+
+    if not osp.exists(Z_EST_FOLDER):
+        os.makedirs(Z_EST_FOLDER)
+    np.save("{}/z_est_{}.npy".format(Z_EST_FOLDER, model_name), z_est)
+    if model_name == 'iFlow':
+        nat_params = nat_params.cpu().detach().numpy()
+        np.save("{}/nat_params.npy".format(Z_EST_FOLDER), nat_params)
+    print("z_est.shape ==", z_est.shape)
+
+    perf = mcc(s, z_est)
+    corr_coefs = correlation_coefficients(s, z_est)
+    print("EVAL PERFORMANCE: {}".format(perf))
+
+    if save_mcc:
+        # Writes results for current model, flow type and n layers in mixing MLP
+        # Saved as i-what_nsource_nlayers_flowlength_prior.txt
+        if model_name == 'iVAE':
+            with open(osp.join('results', "_".join([model_name, data_args]) + '.txt'), 'a+') as f:
+                # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
+                #                                         args.data_args.split("_")[4], args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
+                f.write(", " + str(perf))
+        elif model_name == 'iFlow':
+            with open(osp.join('results', "_".join([model_name, data_args]) + '.txt'), 'a+') as f:
+                # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
+                #                                         args.data_args.split("_")[4],
+                #                                         args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
+                f.write(", " + str(perf))
+
+    print("DONE.")
 
 if __name__ == '__main__':
 
@@ -113,248 +356,11 @@ if __name__ == '__main__':
     if args.file is None:
         args.file = create_if_not_exist_dataset(root='data/{}/'.format(args.seed), arg_str=args.data_args)
 
-    metadata = vars(args).copy()
-    del metadata['no_log'], metadata['data_args']
-
     device = torch.device('cuda' if args.cuda else 'cpu')
-    print('training on {}'.format(torch.cuda.get_device_name(device) if args.cuda else 'cpu'))
 
-    # load data
-    if not args.preload:
-        dset = SyntheticDataset(args.file, 'cpu') # originally 'cpu' ????
-        train_loader = DataLoader(dset, shuffle=True, batch_size=args.batch_size)
-        data_dim, latent_dim, aux_dim = dset.get_dims()
-        args.N = len(dset)
-        metadata.update(dset.get_metadata())
-    else:
-        train_loader = DataLoaderGPU(args.file, shuffle=True, batch_size=args.batch_size)
-        data_dim, latent_dim, aux_dim = train_loader.get_dims()
-        args.N = train_loader.dataset_len
-        metadata.update(train_loader.get_metadata())
+    metadata = vars(args).copy()
+    metadata.update({"device": device})
 
-    if args.max_iter is None:
-        args.max_iter = len(train_loader) * args.epochs
 
-    if args.latent_dim is not None:
-        latent_dim = args.latent_dim
-        metadata.update({"train_latent_dim": latent_dim})
-
-    # define model and optimizer
-    model = None
-    if args.i_what == 'iVAE':
-        model = iVAE(latent_dim, \
-                 data_dim, \
-                 aux_dim, \
-                 n_layers=args.depth, \
-                 activation='lrelu', \
-                 device=device, \
-                 hidden_dim=args.hidden_dim, \
-                 anneal=args.anneal) # False
-    elif args.i_what == 'iFlow':
-        metadata.update({"device": device})
-        model = iFlow(args=metadata).to(device)
-
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, \
-                                                     factor=args.lr_drop_factor, \
-                                                     patience=args.lr_patience, \
-                                                     verbose=True) # factor=0.1 and patience=4
-
-    ste = time.time()
-    print('setup time: {}s'.format(ste - st))
-
-    # setup loggers
-    logger = Logger(logdir=LOG_FOLDER) # 'log/'
-    exp_id = logger.get_id() # 1
-
-    tensorboard_run_name = TENSORBOARD_RUN_FOLDER + 'exp' + str(exp_id) + '_'.join(
-        map(str, ['', args.batch_size, args.max_iter, args.lr, args.hidden_dim, args.depth, args.anneal]))
-    # 'runs/exp1_64_12500_0.001_50_3_False'
-
-    writer = SummaryWriter(logdir=tensorboard_run_name)
-
-    if args.i_what == 'iFlow':
-        logger.add('log_normalizer')
-        logger.add('neg_log_det')
-        logger.add('neg_trace')
-
-    logger.add('loss')
-    logger.add('perf')
-    print('Beginning training for exp: {}'.format(exp_id))
-
-    # training loop
-    epoch = 0
-    model.train()
-    while epoch < args.epochs: #args.max_iter:  #12500
-        est = time.time()
-        for itr, (x, u, z) in enumerate(train_loader):
-            acc_itr = itr + epoch * len(train_loader)
-
-            # x is of shape [64, 4]
-            # u is of shape [64, 40], one-hot coding of 40 classes
-            # z is of shape [64, 2]
-
-            #it += 1
-            #model.anneal(args.N, args.max_iter, it)
-            optimizer.zero_grad()
-
-            if args.cuda and not args.preload:
-                x = x.cuda(device=device, non_blocking=True)
-                u = u.cuda(device=device, non_blocking=True)
-
-            if args.i_what == 'iVAE':
-                elbo, z_est = model.elbo(x, u) #elbo is a scalar loss while z_est is of shape [64, 2]
-                loss = elbo.mul(-1)
-
-            elif args.i_what == 'iFlow':
-                (log_normalizer, neg_trace, neg_log_det), z_est = model.neg_log_likelihood(x, u)
-                loss = log_normalizer + neg_trace + neg_log_det
-
-            loss.backward()
-            optimizer.step()
-
-            logger.update('loss', loss.item())
-            if args.i_what == 'iFlow':
-                logger.update('log_normalizer', log_normalizer.item())
-                logger.update('neg_trace', neg_trace.item())
-                logger.update('neg_log_det', neg_log_det.item())
-
-            perf = mcc(z.cpu().numpy(), z_est.cpu().detach().numpy())
-            logger.update('perf', perf)
-
-            if acc_itr % args.log_freq == 0: # % 25
-                logger.log()
-                writer.add_scalar('data/performance', logger.get_last('perf'), acc_itr)
-                writer.add_scalar('data/loss', logger.get_last('loss'), acc_itr)
-
-                if args.i_what == 'iFlow':
-                    writer.add_scalar('data/log_normalizer', logger.get_last('log_normalizer'), acc_itr)
-                    writer.add_scalar('data/neg_trace', logger.get_last('neg_trace'), acc_itr)
-                    writer.add_scalar('data/neg_log_det', logger.get_last('neg_log_det'), acc_itr)
-
-                scheduler.step(logger.get_last('loss'))
-                #scheduler.step(-perf)
-
-            if acc_itr % int(args.max_iter / 5) == 0 and not args.no_log:
-                checkpoint(PT_MODELS_FOLDER, \
-                           exp_id, \
-                           acc_itr, \
-                           model, \
-                           optimizer, \
-                           logger.get_last('loss'), \
-                           logger.get_last('perf'))
-
-            """
-            if args.i_what == 'iVAE':
-                print('----epoch {} iter {}:\tloss: {:.4f};\tperf: {:.4f}'.format(\
-                                                                   epoch, \
-                                                                   itr, \
-                                                                   loss.item(), \
-                                                                   perf))
-            elif args.i_what == 'iFlow':
-                print('----epoch {} iter {}:\tloss: {:.4f} (l1: {:.4f}, l2: {:.4f}, l3: {:.4f});\tperf: {:.4f}'.format(\
-                                                                    epoch, \
-                                                                    itr, \
-                                                                    loss.item(), \
-                                                                    log_normalizer.item(), \
-                                                                    neg_trace.item(), \
-                                                                    neg_log_det.item(), \
-                                                                    perf))
-            """
-
-        epoch += 1
-        eet = time.time()
-        if args.i_what == 'iVAE':
-            print('epoch {}: {:.4f}s;\tloss: {:.4f};\tperf: {:.4f}'.format(epoch, \
-                                                                   eet-est, \
-                                                                   logger.get_last('loss'), \
-                                                                   logger.get_last('perf')))
-        elif args.i_what == 'iFlow':
-            print('epoch {}: {:.4f}s;\tloss: {:.4f} (l1: {:.4f}, l2: {:.4f}, l3: {:.4f});\tperf: {:.4f}'.format(\
-                                                                    epoch, \
-                                                                    eet-est, \
-                                                                    logger.get_last('loss'), \
-                                                                    logger.get_last('log_normalizer'), \
-                                                                    logger.get_last('neg_trace'), \
-                                                                    logger.get_last('neg_log_det'), \
-                                                                    logger.get_last('perf')))
-
-    et = time.time()
-    print('training time: {}s'.format(et - ste))
-
-    # Save final model
-    checkpoint(PT_MODELS_FOLDER, \
-               "", \
-               'final', \
-               model, \
-               optimizer, \
-               logger.get_last('loss'), \
-               logger.get_last('perf'))
-
-    writer.close()
-    if not args.no_log:
-        logger.add_metadata(**metadata)
-        logger.save_to_json()
-        logger.save_to_npz()
-
-    print('total time: {}s'.format(et - st))
-
-    ###### Run Test Here
-    model.eval()
-    if args.i_what == 'iFlow':
-        import operator
-        from functools import reduce
-        total_num_examples = reduce(operator.mul, map(int, args.data_args.split('_')[:2]))
-        model.set_mask(total_num_examples)
-
-    assert args.file is not None
-    A = np.load(args.file)
-
-    x = A['x'] # of shape
-    x = torch.from_numpy(x).to(device)
-    print("x.shape ==", x.shape)
-
-    s = A['s'] # of shape
-    #s = torch.from_numpy(s).to(device)
-    print("s.shape ==", s.shape)
-
-    u = A['u'] # of shape
-    u = torch.from_numpy(u).to(device)
-    print("u.shape ==", u.shape)
-
-    if args.i_what == 'iVAE':
-        _, z_est = model.elbo(x, u)
-    elif args.i_what == 'iFlow':
-        #(_, _, _), z_est = model.neg_log_likelihood(x, u)
-        total_num_examples = reduce(operator.mul, map(int, args.data_args.split('_')[:2]))
-        model.set_mask(total_num_examples)
-        z_est, nat_params = model.inference(x, u)
-
-    z_est = z_est.cpu().detach().numpy()
-    if not osp.exists(Z_EST_FOLDER):
-        os.makedirs(Z_EST_FOLDER)
-    np.save("{}/z_est_{}.npy".format(Z_EST_FOLDER, args.i_what), z_est)
-    if args.i_what == 'iFlow':
-        nat_params = nat_params.cpu().detach().numpy()
-        np.save("{}/nat_params.npy".format(Z_EST_FOLDER), nat_params)
-    print("z_est.shape ==", z_est.shape)
-
-    perf = mcc(s, z_est)
-    corr_coefs = correlation_coefficients(s, z_est)
-    print("EVAL PERFORMANCE: {}".format(perf))
-
-    # Writes results for current model, flow type and n layers in mixing MLP
-    # Saved as i-what_nsource_nlayers_flowlength_prior.txt
-    if args.i_what == 'iVAE':
-        with open(osp.join('results', "_".join([args.i_what, args.data_args]) + '.txt'), 'a+') as f:
-        # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
-        #                                         args.data_args.split("_")[4], args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
-            f.write(", " + str(perf))
-    else:
-        with open(osp.join('results', "_".join([args.i_what, args.data_args]) + '.txt'), 'a+') as f:
-        # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
-        #                                         args.data_args.split("_")[4],
-        #                                         args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
-            f.write(", " + str(perf))
-
-    print("DONE.")
+    model = train_model(args, metadata, device=device)
+    test_model(model, device=device, save_mcc=args.save_mcc)

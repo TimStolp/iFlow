@@ -190,9 +190,13 @@ class Bernoulli(Dist):
 class iVAE(nn.Module):
     def __init__(self, latent_dim, data_dim, aux_dim, 
                  prior=None, decoder=None, encoder=None,
-                 n_layers=3, hidden_dim=50, activation='lrelu', slope=.1, device='cpu', anneal=False):
+                 n_layers=3, hidden_dim=50, activation='lrelu', slope=.1, device='cpu', anneal=False,
+                 file=None, seed=1, epochs=20):
         
         super().__init__()
+        self.file = file
+        self.seed = seed
+        self.epochs = epochs
 
         self.data_dim = data_dim
         self.latent_dim = latent_dim
