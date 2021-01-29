@@ -22,13 +22,17 @@ conda env create --name envname --file=environment_windows.yml
 ```
 
 
-### Instructions
+## Instructions
+
+### Running experiments
 
 To run the experiments run Jupyter Notebook 
 
 ```jupyter notebook```
 
 and follow the instructions in `results.ipynb`.
+
+### Training a model
 
 To train a model run
 
