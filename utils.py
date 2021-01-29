@@ -6,6 +6,29 @@ from lib.data import create_if_not_exist_dataset
 from lib.iFlow import iFlow
 from lib.models import iVAE
 
+from scipy.optimize import linear_sum_assignment
+
+
+def correlation_coefficients(x, y, method='pearson'):
+    """
+    A numpy implementation of the mean correlation coefficient metric.
+
+    :param x: numpy.ndarray
+    :param y: numpy.ndarray
+    :param method: str, optional
+            The method used to compute the correlation coefficients.
+    :return: float
+    """
+    d = x.shape[1]
+    if method == 'pearson':
+        cc = np.corrcoef(x, y, rowvar=False)[:d, d:]
+    else:
+        raise ValueError('not a valid method: {}'.format(method))
+    cc_matrix = np.abs(cc)
+
+    corr_coefs = cc_matrix[linear_sum_assignment(-1 * cc_matrix)] #.mean()
+    return corr_coefs
+
 def plot_2d(s, x, u, z_est_iFlow, z_est_iVAE, iFlow_perf=None, iVAE_perf=None, filename=None):
     """
     s : true latent variables, source of the observations
@@ -62,17 +85,17 @@ def load_plot_2d(seeds, data_arguments, iFlow_results_file=None, iVAE_results_fi
     iVAE_perfs = None
 
     if iFlow_results_file:
-        with open(osp.join('results', iFlow_results_file)) as f:
+        with open(iFlow_results_file) as f:
             iFlow_perfs = list(map(eval, f.readline().split(',')[1:]))
+            print('iFlow mean = {:.4f}, std = {:.4f}'.format(np.mean(iFlow_perfs), np.std(iFlow_perfs)))
+            print('len iFlow array:', len(iFlow_perfs))
+
     if iVAE_results_file:
-        with open(osp.join('results', iVAE_results_file)) as f:
+        with open(iVAE_results_file) as f:
             iVAE_perfs = list(map(eval, f.readline().split(',')[1:]))
+            print('iVAE mean = {:.4f}, std = {:.4f}'.format(np.mean(iVAE_perfs), np.std(iVAE_perfs)))
+            print('len iVAE array:', len(iVAE_perfs))
 
-    print('iFlow mean {:.4f}, std {:.4f}'.format(np.mean(iFlow_perfs), np.std(iFlow_perfs)))
-
-    print('iVAE mean  {:.4f}, std {:.4f}'.format(np.mean(iVAE_perfs), np.std(iVAE_perfs)))
-    print('len iFlow array:', len(iFlow_perfs))
-    print('len iVAE array:', len(iVAE_perfs))
 
     data_arguments = data_arguments.split("_")
     for i, seed in enumerate(seeds):
@@ -84,8 +107,6 @@ def load_plot_2d(seeds, data_arguments, iFlow_results_file=None, iVAE_results_fi
             x = data['x']
             u = data['u']
             s = data['s']
-            m = data['m']
-            L = data['L']
         # load predictions
         path_to_z_est = "z_est/" + "_".join(data_arguments[:5]) + "_" + str(seed) + "_" + "_".join(
             data_arguments[6:]) + '_' + str(epochs) + "/"
@@ -97,7 +118,6 @@ def load_plot_2d(seeds, data_arguments, iFlow_results_file=None, iVAE_results_fi
         # plot and save figure
         plot_2d(s, x, u, z_est_iFlow, z_est_iVAE, iFlow_perfs[i], iVAE_perfs[i], filename=fig_name)
 
-# def plot_2d_from_checkpoint(data_arguments, checkpoint)
 
 def load_model_from_checkpoint(ckpt_path, device, model_seed=1):
     print('checkpoint path:', ckpt_path)

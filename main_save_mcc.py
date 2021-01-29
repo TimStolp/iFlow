@@ -34,15 +34,11 @@ def correlation_coefficients(x, y, method='pearson'):
                 The options are 'pearson' and 'spearman'
                 'pearson':
                     use Pearson's correlation coefficient
-                'spearman':
-                    use Spearman's nonparametric rank correlation coefficient
     :return: float
     """
     d = x.shape[1]
     if method == 'pearson':
         cc = np.corrcoef(x, y, rowvar=False)[:d, d:]
-    elif method == 'spearman':
-        cc = spearmanr(x, y)[0][:d, d:]
     else:
         raise ValueError('not a valid method: {}'.format(method))
     cc_matrix = np.abs(cc)
@@ -277,13 +273,14 @@ def test_model(model, device, save_mcc=False):
     if save_mcc:
         # Writes results for current model, flow type and n layers in mixing MLP
         # Saved as i-what_nsource_nlayers_flowlength_prior.txt
+        split_args = data_args.split("_")
         if model_name == 'iVAE':
-            with open(osp.join('results', "_".join([model_name, data_args]) + '.txt'), 'a+') as f:
+            with open(osp.join('results', '2D_mcc_scores', "_".join([model_name, "_".join(split_args[:2]), split_args[4]]) + '.txt'), 'a+') as f:
                 # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
                 #                                         args.data_args.split("_")[4], args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
                 f.write(", " + str(perf))
         elif model_name == 'iFlow':
-            with open(osp.join('results', "_".join([model_name, data_args]) + '.txt'), 'a+') as f:
+            with open(osp.join('results', '2D_mcc_scores', "_".join([model_name, "_".join(split_args[:2]), split_args[4]]) + '.txt'), 'a+') as f:
                 # with open(osp.join('results', "_".join([args.i_what, "_".join(args.data_args.split("_")[:2]),
                 #                                         args.data_args.split("_")[4],
                 #                                         args.data_args.split("_")[6]]) + '.txt'), 'a+') as f:
@@ -326,7 +323,7 @@ if __name__ == '__main__':
     parser.add_argument('-fl', '--flow_length', type=int, default=10)
     parser.add_argument('-lr_df', '--lr_drop_factor', type=float, default=0.25)
     parser.add_argument('-lr_pn', '--lr_patience', type=int, default=10)
-    parser.add_argument('-mcc', '--mcc_store', action='store_true', default=False, help='save MCC to path /results/i-what_nps_ns_nl')
+    parser.add_argument('-mcc', '--save_mcc', action='store_true', default=False, help='save MCC to path /results/i-what_nps_ns_nl')
 
     args = parser.parse_args()
 
