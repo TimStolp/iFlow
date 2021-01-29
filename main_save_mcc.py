@@ -44,7 +44,7 @@ def correlation_coefficients(x, y, method='pearson'):
     cc_matrix = np.abs(cc)
 
     corr_coefs = cc_matrix[linear_sum_assignment(-1 * cc_matrix)] #.mean()
-    return corr_coefs, cc_matrix
+    return corr_coefs
 
 def train_model(args, metadata, device='cuda'):
     print('training on {}'.format(torch.cuda.get_device_name(device) if args.cuda else 'cpu'))
@@ -267,7 +267,7 @@ def test_model(model, device, save_mcc=False):
     print("z_est.shape ==", z_est.shape)
 
     perf = mcc(s, z_est)
-    corr_coefs = correlation_coefficients(s, z_est)
+    # corr_coefs = correlation_coefficients(s, z_est)
     print("EVAL PERFORMANCE: {}".format(perf))
 
     if save_mcc:
