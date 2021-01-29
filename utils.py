@@ -71,6 +71,9 @@ def plot_2d(s, x, u, z_est_iFlow, z_est_iVAE, iFlow_perf=None, iVAE_perf=None, f
         else:
             ax4.set_xlabel("iVAE")
     plt.show()
+
+    if not osp.exists('results/2D_visualizations/'):
+        os.makedirs('results/2D_visualizations/')
     fig.savefig('results/2D_visualizations/' + filename)
     return
 
