@@ -259,6 +259,8 @@ def plot_5d_correlations(z_est_dataset_dir, show_iFlow=True, show_iVAE=True):
             axes[0].set_ylabel('Latent Value')
             plt.show()
 
+            if not osp.exists('results/mcc_across_dims/'):
+                os.makedirs('results/mcc_across_dims/')
             fig.savefig('results/mcc_across_dims/' + "_".join([model_names[model_idx], data_arguments]))
 
 def print_cc_mean_std(file):
