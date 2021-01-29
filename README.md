@@ -37,7 +37,7 @@ and follow the instructions in `results.ipynb`.
 To train a model run
 
 ```
-x: argument string to generate a dataset. Usage further explained in lib.data.create_if_not_exist_dataset.
+x: argument string to generate a dataset. Usage further explained in lib/data.py:create_if_not_exist_dataset()
 i: Model type
 ft: Flow type
 npa: Natural parameter activation function
