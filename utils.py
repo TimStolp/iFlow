@@ -136,8 +136,6 @@ def load_model_from_checkpoint(ckpt_path, device, model_seed=1):
     model_name = model_args[-2]
     data_args = model_args[:-2]
 
-    print(data_args)
-
     data_file = create_if_not_exist_dataset(root='data/{}/'.format(model_seed), arg_str="_".join(data_args))
 
     nps = int(data_args[0])
@@ -261,3 +259,17 @@ def plot_5d_correlations(z_est_dataset_dir, show_iFlow=True, show_iVAE=True):
             plt.show()
 
             fig.savefig('results/mcc_across_dims/' + "_".join([model_names[model_idx], data_arguments]))
+
+def print_cc_mean_std(file):
+    """
+    file : path to data file in .txt format. (default None)
+    """
+    with open(file, 'r') as f:
+        coeffs = f.readline().split(';')[1:]
+        coeffs += f.readline().split(';')
+    array = np.array([c.strip('[]').split() for c in coeffs]).astype('float')
+    std = array.std(axis=0)
+    mean = array.mean(axis=0)
+    print('means: ', np.round(mean, 4))
+    print('standard deviations: ', np.round(std, 4))
+
