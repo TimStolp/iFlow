@@ -266,8 +266,8 @@ def print_cc_mean_std(file):
     file : path to data file in .txt format. (default None)
     """
     with open(file, 'r') as f:
-        coeffs = f.readline().split(';')[1:]
-        coeffs += f.readline().split(';')
+        coeffs = f.read().replace('\n', '').split(';')[1:]
+
     array = np.array([c.strip('[]').split() for c in coeffs]).astype('float')
     std = array.std(axis=0)
     mean = array.mean(axis=0)
