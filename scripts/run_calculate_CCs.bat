@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-del "results\corr_coeffs_per_dimension.txt"
+del "results\cc_across_dims\iFlow_1000_40_5.txt"
 
 set s=1
 for /D %%F in ("experiments\*") do (

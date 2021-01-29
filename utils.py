@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os.path as osp
 import torch
+import os
 from lib.data import create_if_not_exist_dataset
 from lib.iFlow import iFlow
 from lib.models import iVAE
@@ -273,3 +274,11 @@ def print_cc_mean_std(file):
     print('means: ', np.round(mean, 4))
     print('standard deviations: ', np.round(std, 4))
 
+def read_energy_values_from_tensorboard():
+    energy_values = []
+    for directory in os.listdir('experiments'):
+        npz = np.load(os.path.join('experiments', directory, 'log', 'data', '1.npz'))
+        # 'log_normalizer', 'neg_log_det', 'neg_trace', 'loss', 'perf'
+        energy_values.append(-npz['loss'][-1])
+
+    np.save(os.path.join('results', 'energy_values.npy'), np.array(energy_values))

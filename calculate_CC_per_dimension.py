@@ -95,5 +95,5 @@ print(corr_coeffs)
 
 if not os.path.exists('results'):
     os.makedirs('results')
-with open(osp.join('results', 'corr_coeffs_per_dimension.txt'), 'a+') as f:
+with open(osp.join('results', 'cc_across_dims', 'iFlow_1000_40_5.txt'), 'a+') as f:
     f.write(';' + str(corr_coeffs))
