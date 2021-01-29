@@ -1,6 +1,6 @@
 
 
-for /l %%s in (61, 1, 100) do (
+for /l %%s in (1, 1, 60) do (
     python main.py ^
         -x 1000_40_5_5_3_%%s_gauss_xtanh_u_f ^
         -i iFlow ^
