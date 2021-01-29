@@ -1,15 +1,9 @@
-import argparse
-import numpy as np
+from utils import print_cc_mean_std
 
-parser = argparse.ArgumentParser()
+print_cc_mean_std('results\cc_across_dims\iFlow_1000_40_3.txt')
 
-parser.add_argument('-f', '--file', default=None, help='path to data file in .txt format. (default None)')
+print()
+print()
+print()
 
-args = parser.parse_args()
-
-with open(args.file, 'r') as f:
-    coeffs = f.readline().split(';')[1:]
-
-array = np.array([c.strip('[]').split() for c in coeffs]).astype('float')
-std = array.std(axis=0)
-print('standard deviations: ', std)
+print_cc_mean_std('results\iVAE_correlations\iVAE_1000_40_3.txt')
