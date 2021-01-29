@@ -73,17 +73,22 @@ def plot_2d(s, x, u, z_est_iFlow, z_est_iVAE, iFlow_perf=None, iVAE_perf=None, f
     return
 
 
-def load_plot_2d(seeds, data_arguments, iFlow_results_file=None, iVAE_results_file=None, epochs=20):
+def load_plot_2d(seeds, data_arguments='1000_5_2_2_$mixing-layers_$seed_gauss_xtanh_u_f', iFlow_results_file=None,
+                 iVAE_results_file=None, epochs=20, mixing_layers=3):
     """
     seeds : list of dataset seeds for visualization
-    data_arguments : arguments for the dataset
+    data_arguments : arguments for the dataset, 'nps_ns_dl_dd_nl_s_p_a_u_n'
     iFlow_results_file : filename of corresponding iFlow results
     iVAE_results_file : filename of corresponding iVAE results
     epochs : number of training epochs
+    mixing_layers : number of mixing layers used that generated the results
     """
     iFlow_perfs = None
     iVAE_perfs = None
+    data_arguments = data_arguments.split("_")
+    data_arguments = data_arguments[:4] + [str(mixing_layers)] + data_arguments[5:]
 
+    print("Number of layers in dataset mixing MLP: ", mixing_layers)
     if iFlow_results_file:
         with open(iFlow_results_file) as f:
             iFlow_perfs = list(map(eval, f.readline().split(',')[1:]))
@@ -97,7 +102,7 @@ def load_plot_2d(seeds, data_arguments, iFlow_results_file=None, iVAE_results_fi
             print('len iVAE array:', len(iVAE_perfs))
 
 
-    data_arguments = data_arguments.split("_")
+
     for i, seed in enumerate(seeds):
         # load data
         path_to_dataset = "data/1/tcl_" + "_".join(data_arguments[:5]) + "_" + str(seed) + "_" + "_".join(
@@ -128,6 +133,8 @@ def load_model_from_checkpoint(ckpt_path, device, model_seed=1):
     epochs = model_args[-1]
     model_name = model_args[-2]
     data_args = model_args[:-2]
+
+    print(data_args)
 
     data_file = create_if_not_exist_dataset(root='data/{}/'.format(model_seed), arg_str="_".join(data_args))
 
